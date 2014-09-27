@@ -1,0 +1,263 @@
+<!DOCTYPE html><html xmlns="http://www.w3.org/1999/xhtml"><head><title>Ohai Plugins</title><meta name="generator" content="Hovercraft! 1.0 http://regebro.github.com/hovercraft"></meta><link rel="stylesheet" href="css/hovercraft.css" media="all"></link><link rel="stylesheet" href="css/impressConsole.css" media="all"></link><link rel="stylesheet" href="css/highlight.css" media="all"></link><link rel="stylesheet" href="ohai.css" media="screen,projection"></link></head><body class="impress-not-supported"><div id="impress" data-transition-duration="1500"><div class="step" step="0" data-x="0" data-y="0"><h1 id="ohai-and-ohai-plugins">Ohai and Ohai Plugins</h1><p>Ryan Walker</p><pre class="highlight ">DevOps Engineer, Rackspace
+@theryanwalker
+https://github.com/ryandub</pre></div><div class="step" step="1" data-x="1600" data-y="0"><h1 id="about-me">About Me</h1><ul><li>Managed Cloud</li><li>Deployments</li><li>DevOps Automation Team</li><li>Rackspace Cloud Cookbook</li><li><a href="https://github.com/rackerlabs/ohai-plugins">https://github.com/rackerlabs/ohai-plugins</a></li></ul></div><div class="step" step="2" data-x="3200" data-y="0"><img src="https://dl.dropboxusercontent.com/s/qrrsoya5r1c0b0a/2014-09-27%20at%204.26%20PM%202x.png" alt="" width="800" height="500"></img><p>Gathers data from node for use in Cookbook recipes:</p><ul><li><tt>node['platform']</tt></li><li><tt>node['fqdn']</tt></li><li><tt>node['ipaddress']</tt></li></ul></div><div class="step" step="3" data-x="53200" data-y="50000" data-scale="100000.0" data-rotate-z="90"><h1 id="how-ohai-works">How Ohai Works</h1><ul><li><tt>/opt/chef/bin/ohai</tt></li></ul><p><tt>Ohai::Application.run_application</tt> initializes the system and runs <tt>Ohai::System.new</tt>.</p><pre class="highlight code ruby"><span class="k">def</span> <span class="nf">run_application</span>
+  <span class="n">ohai</span> <span class="o">=</span> <span class="ss">Ohai</span><span class="p">:</span><span class="ss">:System</span><span class="o">.</span><span class="n">new</span>
+  <span class="n">ohai</span><span class="o">.</span><span class="n">all_plugins</span><span class="p">(</span><span class="vi">@attributes</span><span class="p">)</span>
+
+  <span class="k">if</span> <span class="vi">@attributes</span>
+    <span class="vi">@attributes</span><span class="o">.</span><span class="n">each</span> <span class="k">do</span> <span class="o">|</span><span class="n">a</span><span class="o">|</span>
+      <span class="nb">puts</span> <span class="n">ohai</span><span class="o">.</span><span class="n">attributes_print</span><span class="p">(</span><span class="n">a</span><span class="p">)</span>
+    <span class="k">end</span>
+  <span class="k">else</span>
+    <span class="nb">puts</span> <span class="n">ohai</span><span class="o">.</span><span class="n">json_pretty_print</span>
+  <span class="k">end</span>
+<span class="k">end</span></pre></div><div class="step" step="4" data-x="53200" data-y="20050000" data-scale="10000" data-rotate-z="90"><p><tt>run_application</tt> calls <tt>Ohai::System.all_plugins</tt> and loads all plugins from plugins directory/directories.</p><pre class="highlight code ruby"><span class="c1"># Searches all plugin paths and returns an Array of PluginFile objects</span>
+<span class="c1"># representing each plugin file.</span>
+<span class="k">def</span> <span class="nf">plugin_files_by_dir</span>
+  <span class="nb">Array</span><span class="p">(</span><span class="ss">Ohai</span><span class="p">:</span><span class="ss">:Config</span><span class="o">[</span><span class="ss">:plugin_path</span><span class="o">]</span><span class="p">)</span><span class="o">.</span><span class="n">inject</span><span class="p">(</span><span class="o">[]</span><span class="p">)</span> <span class="k">do</span> <span class="o">|</span><span class="n">plugin_files</span><span class="p">,</span> <span class="n">plugin_path</span><span class="o">|</span>
+    <span class="n">plugin_files</span> <span class="o">+</span> <span class="no">PluginFile</span><span class="o">.</span><span class="n">find_all_in</span><span class="p">(</span><span class="n">plugin_path</span><span class="p">)</span>
+  <span class="k">end</span>
+<span class="k">end</span>
+
+<span class="k">def</span> <span class="nf">load_all</span>
+  <span class="n">plugin_files_by_dir</span><span class="o">.</span><span class="n">each</span> <span class="k">do</span> <span class="o">|</span><span class="n">plugin_file</span><span class="o">|</span>
+    <span class="n">load_plugin_class</span><span class="p">(</span><span class="n">plugin_file</span><span class="o">.</span><span class="n">path</span><span class="p">,</span> <span class="n">plugin_file</span><span class="o">.</span><span class="n">plugin_root</span><span class="p">)</span>
+  <span class="k">end</span>
+
+  <span class="n">collect_v6_plugins</span>
+  <span class="n">collect_v7_plugins</span>
+<span class="k">end</span></pre></div><div class="step" step="5" data-x="53200" data-y="22050000" data-scale="1000" data-rotate-z="90"><p>Then runs <tt>Ohai::Runner.run_plugin</tt> for each plugin found:</p><pre class="highlight code ruby"><span class="k">def</span> <span class="nf">run_plugin</span><span class="p">(</span><span class="n">plugin</span><span class="p">)</span>
+  <span class="k">unless</span> <span class="n">plugin</span><span class="o">.</span><span class="n">kind_of?</span><span class="p">(</span><span class="ss">Ohai</span><span class="p">:</span><span class="ss">:DSL</span><span class="o">::</span><span class="no">Plugin</span><span class="p">)</span>
+    <span class="k">raise</span> <span class="ss">Ohai</span><span class="p">:</span><span class="ss">:Exceptions</span><span class="o">::</span><span class="no">InvalidPlugin</span><span class="p">,</span> <span class="s2">"Invalid plugin </span><span class="si">#{</span><span class="n">plugin</span><span class="si">}</span><span class="s2"> (must be an Ohai::DSL::Plugin or subclass)"</span>
+  <span class="k">end</span>
+
+  <span class="k">begin</span>
+    <span class="k">case</span> <span class="n">plugin</span><span class="o">.</span><span class="n">version</span>
+    <span class="k">when</span> <span class="ss">:version7</span>
+      <span class="n">run_v7_plugin</span><span class="p">(</span><span class="n">plugin</span><span class="p">)</span>
+    <span class="k">when</span> <span class="ss">:version6</span>
+      <span class="n">run_v6_plugin</span><span class="p">(</span><span class="n">plugin</span><span class="p">)</span>
+    <span class="k">else</span>
+      <span class="k">raise</span> <span class="ss">Ohai</span><span class="p">:</span><span class="ss">:Exceptions</span><span class="o">::</span><span class="no">InvalidPlugin</span><span class="p">,</span> <span class="s2">"Invalid plugin version </span><span class="si">#{</span><span class="n">plugin</span><span class="o">.</span><span class="n">version</span><span class="si">}</span><span class="s2"> for plugin </span><span class="si">#{</span><span class="n">plugin</span><span class="si">}</span><span class="s2">"</span>
+    <span class="k">end</span>
+  <span class="k">rescue</span> <span class="ss">Ohai</span><span class="p">:</span><span class="ss">:Exceptions</span><span class="o">::</span><span class="no">Error</span>
+    <span class="k">raise</span>
+  <span class="k">rescue</span> <span class="no">Exception</span><span class="p">,</span><span class="ss">Errno</span><span class="p">:</span><span class="ss">:ENOENT</span> <span class="o">=&gt;</span> <span class="n">e</span>
+    <span class="ss">Ohai</span><span class="p">:</span><span class="ss">:Log</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s2">"Plugin </span><span class="si">#{</span><span class="n">plugin</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2"> threw exception </span><span class="si">#{</span><span class="n">e</span><span class="o">.</span><span class="n">inspect</span><span class="si">}</span><span class="s2"> </span><span class="si">#{</span><span class="n">e</span><span class="o">.</span><span class="n">backtrace</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="s2">"</span><span class="se">\n</span><span class="s2">"</span><span class="p">)</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
+  <span class="k">end</span>
+<span class="k">end</span></pre></div><div class="step" step="6" data-x="53200" data-y="22058000" data-scale="100" data-rotate-z="90"><p><tt>run_plugin</tt> detects dependencies and ensures plugins only run once.</p><pre class="highlight code ruby"><span class="k">def</span> <span class="nf">run_v7_plugin</span><span class="p">(</span><span class="n">plugin</span><span class="p">)</span>
+  <span class="n">visited</span> <span class="o">=</span> <span class="o">[</span> <span class="n">plugin</span> <span class="o">]</span>
+  <span class="k">while</span> <span class="o">!</span><span class="n">visited</span><span class="o">.</span><span class="n">empty?</span>
+    <span class="n">next_plugin</span> <span class="o">=</span> <span class="n">visited</span><span class="o">.</span><span class="n">pop</span>
+
+    <span class="k">next</span> <span class="k">if</span> <span class="n">next_plugin</span><span class="o">.</span><span class="n">has_run?</span>
+
+    <span class="k">if</span> <span class="n">visited</span><span class="o">.</span><span class="n">include?</span><span class="p">(</span><span class="n">next_plugin</span><span class="p">)</span>
+      <span class="k">raise</span> <span class="ss">Ohai</span><span class="p">:</span><span class="ss">:Exceptions</span><span class="o">::</span><span class="no">DependencyCycle</span><span class="p">,</span> <span class="s2">"Dependency cycle detected. Please refer to the following plugins: </span><span class="si">#{</span><span class="n">get_cycle</span><span class="p">(</span><span class="n">visited</span><span class="p">,</span> <span class="n">plugin</span><span class="p">)</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="s2">", "</span><span class="p">)</span> <span class="si">}</span><span class="s2">"</span>
+    <span class="k">end</span>
+
+    <span class="n">dependency_providers</span> <span class="o">=</span> <span class="n">fetch_plugins</span><span class="p">(</span><span class="n">next_plugin</span><span class="o">.</span><span class="n">dependencies</span><span class="p">)</span>
+
+    <span class="c1"># Remove the already ran plugins from dependencies if force is not set</span>
+    <span class="c1"># Also remove the plugin that we are about to run from dependencies as well.</span>
+    <span class="n">dependency_providers</span><span class="o">.</span><span class="n">delete_if</span> <span class="p">{</span> <span class="o">|</span><span class="n">dep_plugin</span><span class="o">|</span>
+      <span class="n">dep_plugin</span><span class="o">.</span><span class="n">has_run?</span> <span class="o">||</span> <span class="n">dep_plugin</span><span class="o">.</span><span class="n">eql?</span><span class="p">(</span><span class="n">next_plugin</span><span class="p">)</span>
+    <span class="p">}</span>
+
+    <span class="k">if</span> <span class="n">dependency_providers</span><span class="o">.</span><span class="n">empty?</span>
+      <span class="vi">@safe_run</span> <span class="p">?</span> <span class="n">next_plugin</span><span class="o">.</span><span class="n">safe_run</span> <span class="p">:</span> <span class="n">next_plugin</span><span class="o">.</span><span class="n">run</span>
+    <span class="k">else</span>
+      <span class="n">visited</span> <span class="o">&lt;&lt;</span> <span class="n">next_plugin</span> <span class="o">&lt;&lt;</span> <span class="n">dependency_providers</span><span class="o">.</span><span class="n">first</span>
+    <span class="k">end</span>
+  <span class="k">end</span>
+<span class="k">end</span></pre></div><div class="step" step="7" data-x="63200" data-y="22068000" data-scale="10" data-rotate-z="90"><p><tt>run_plugin</tt> also captures exceptions so that an exception in one plugin does not prevent other plugins from running.</p><pre class="highlight code ruby"><span class="ss">DEBUG</span><span class="p">:</span> <span class="no">Plugin</span> <span class="no">NetworkListeners</span> <span class="n">threw</span> <span class="n">exception</span> <span class="c1">#&lt;LoadError: cannot load such file -- sigar&gt; /opt/chef/embedded/lib/ruby/site_ruby/1.9.1/rubygems/custom_require.rb:36:in `require'</span>
+<span class="sr">/opt/</span><span class="n">chef</span><span class="o">/</span><span class="n">embedded</span><span class="o">/</span><span class="n">lib</span><span class="o">/</span><span class="n">ruby</span><span class="o">/</span><span class="n">site_ruby</span><span class="o">/</span><span class="mi">1</span><span class="o">.</span><span class="mi">9</span><span class="o">.</span><span class="mi">1</span><span class="o">/</span><span class="n">rubygems</span><span class="o">/</span><span class="n">custom_require</span><span class="o">.</span><span class="n">rb</span><span class="p">:</span><span class="mi">36</span><span class="ss">:in</span> <span class="sb">`require'
+/opt/chef/embedded/lib/ruby/gems/1.9.1/gems/ohai-7.4.0/lib/ohai/plugins/network_listeners.rb:25:in `</span><span class="n">block</span> <span class="p">(</span><span class="mi">2</span> <span class="n">levels</span><span class="p">)</span> <span class="k">in</span> <span class="o">&lt;</span><span class="n">main</span><span class="o">&gt;</span><span class="s1">'
+/opt/chef/embedded/lib/ruby/gems/1.9.1/gems/ohai-7.4.0/lib/ohai/dsl/plugin/versionvii.rb:90:in `instance_eval'</span>
+<span class="sr">/opt/</span><span class="n">chef</span><span class="o">/</span><span class="n">embedded</span><span class="o">/</span><span class="n">lib</span><span class="o">/</span><span class="n">ruby</span><span class="o">/</span><span class="n">gems</span><span class="o">/</span><span class="mi">1</span><span class="o">.</span><span class="mi">9</span><span class="o">.</span><span class="mi">1</span><span class="o">/</span><span class="n">gems</span><span class="o">/</span><span class="n">ohai</span><span class="o">-</span><span class="mi">7</span><span class="o">.</span><span class="mi">4</span><span class="o">.</span><span class="mi">0</span><span class="o">/</span><span class="n">lib</span><span class="o">/</span><span class="n">ohai</span><span class="o">/</span><span class="n">dsl</span><span class="o">/</span><span class="n">plugin</span><span class="o">/</span><span class="n">versionvii</span><span class="o">.</span><span class="n">rb</span><span class="p">:</span><span class="mi">90</span><span class="ss">:in</span> <span class="sb">`run_plugin'
+/opt/chef/embedded/lib/ruby/gems/1.9.1/gems/ohai-7.4.0/lib/ohai/dsl/plugin.rb:98:in `</span><span class="n">run</span><span class="s1">'
+/opt/chef/embedded/lib/ruby/gems/1.9.1/gems/ohai-7.4.0/lib/ohai/dsl/plugin.rb:169:in `safe_run'</span>
+<span class="sr">/opt/</span><span class="n">chef</span><span class="o">/</span><span class="n">embedded</span><span class="o">/</span><span class="n">lib</span><span class="o">/</span><span class="n">ruby</span><span class="o">/</span><span class="n">gems</span><span class="o">/</span><span class="mi">1</span><span class="o">.</span><span class="mi">9</span><span class="o">.</span><span class="mi">1</span><span class="o">/</span><span class="n">gems</span><span class="o">/</span><span class="n">ohai</span><span class="o">-</span><span class="mi">7</span><span class="o">.</span><span class="mi">4</span><span class="o">.</span><span class="mi">0</span><span class="o">/</span><span class="n">lib</span><span class="o">/</span><span class="n">ohai</span><span class="o">/</span><span class="n">runner</span><span class="o">.</span><span class="n">rb</span><span class="p">:</span><span class="mi">82</span><span class="ss">:in</span> <span class="sb">`run_v7_plugin'
+/opt/chef/embedded/lib/ruby/gems/1.9.1/gems/ohai-7.4.0/lib/ohai/runner.rb:43:in `</span><span class="n">run_plugin</span><span class="s1">'
+/opt/chef/embedded/lib/ruby/gems/1.9.1/gems/ohai-7.4.0/lib/ohai/system.rb:96:in `block in run_plugins'</span>
+<span class="sr">/opt/</span><span class="n">chef</span><span class="o">/</span><span class="n">embedded</span><span class="o">/</span><span class="n">lib</span><span class="o">/</span><span class="n">ruby</span><span class="o">/</span><span class="n">gems</span><span class="o">/</span><span class="mi">1</span><span class="o">.</span><span class="mi">9</span><span class="o">.</span><span class="mi">1</span><span class="o">/</span><span class="n">gems</span><span class="o">/</span><span class="n">ohai</span><span class="o">-</span><span class="mi">7</span><span class="o">.</span><span class="mi">4</span><span class="o">.</span><span class="mi">0</span><span class="o">/</span><span class="n">lib</span><span class="o">/</span><span class="n">ohai</span><span class="o">/</span><span class="nb">system</span><span class="o">.</span><span class="n">rb</span><span class="p">:</span><span class="mi">95</span><span class="ss">:in</span> <span class="sb">`each'
+/opt/chef/embedded/lib/ruby/gems/1.9.1/gems/ohai-7.4.0/lib/ohai/system.rb:95:in `</span><span class="n">run_plugins</span><span class="s1">'
+/opt/chef/embedded/lib/ruby/gems/1.9.1/gems/ohai-7.4.0/lib/ohai/system.rb:73:in `all_plugins'</span>
+<span class="sr">/opt/</span><span class="n">chef</span><span class="o">/</span><span class="n">embedded</span><span class="o">/</span><span class="n">lib</span><span class="o">/</span><span class="n">ruby</span><span class="o">/</span><span class="n">gems</span><span class="o">/</span><span class="mi">1</span><span class="o">.</span><span class="mi">9</span><span class="o">.</span><span class="mi">1</span><span class="o">/</span><span class="n">gems</span><span class="o">/</span><span class="n">ohai</span><span class="o">-</span><span class="mi">7</span><span class="o">.</span><span class="mi">4</span><span class="o">.</span><span class="mi">0</span><span class="o">/</span><span class="n">lib</span><span class="o">/</span><span class="n">ohai</span><span class="o">/</span><span class="n">application</span><span class="o">.</span><span class="n">rb</span><span class="p">:</span><span class="mi">90</span><span class="ss">:in</span> <span class="sb">`run_application'
+/opt/chef/embedded/lib/ruby/gems/1.9.1/gems/ohai-7.4.0/lib/ohai/application.rb:70:in `</span><span class="n">run</span><span class="s1">'
+/opt/chef/embedded/lib/ruby/gems/1.9.1/gems/ohai-7.4.0/bin/ohai:42:in `&lt;top (required)&gt;'</span>
+<span class="sr">/opt/</span><span class="n">chef</span><span class="o">/</span><span class="n">bin</span><span class="o">/</span><span class="ss">ohai</span><span class="p">:</span><span class="mi">23</span><span class="ss">:in</span> <span class="sb">`load'
+/opt/chef/bin/ohai:23:in `</span><span class="o">&lt;</span><span class="n">main</span><span class="o">&gt;</span><span class="err">'</span>
+<span class="ss">DEBUG</span><span class="p">:</span> <span class="o">[</span><span class="n">inet</span><span class="o">]</span> <span class="no">Using</span> <span class="n">default</span> <span class="n">interface</span> <span class="n">eth0</span> <span class="ow">and</span> <span class="n">default</span> <span class="n">gateway</span> <span class="mi">10</span><span class="o">.</span><span class="mi">0</span><span class="o">.</span><span class="mi">2</span><span class="o">.</span><span class="mi">2</span> <span class="n">to</span> <span class="n">set</span> <span class="n">the</span> <span class="n">default</span> <span class="n">ip</span> <span class="n">to</span> <span class="mi">10</span><span class="o">.</span><span class="mi">0</span><span class="o">.</span><span class="mi">2</span><span class="o">.</span><span class="mi">15</span>
+<span class="ss">DEBUG</span><span class="p">:</span> <span class="o">[</span><span class="n">inet6</span><span class="o">]</span> <span class="n">no</span> <span class="n">default</span> <span class="n">interface</span><span class="p">,</span> <span class="n">picking</span> <span class="n">the</span> <span class="n">first</span> <span class="n">ipaddress</span></pre></div><div class="step" step="8" data-x="63400" data-y="22073000" data-scale="1" data-rotate-z="90"><p>Plugins collect the output of the shell-outs into a Mash via the <tt>collect_data</tt> function:</p><pre class="highlight code ruby"><span class="no">Ohai</span><span class="o">.</span><span class="n">plugin</span><span class="p">(</span><span class="ss">:BlockDevice</span><span class="p">)</span> <span class="k">do</span>
+  <span class="n">provides</span> <span class="s2">"block_device"</span>
+
+  <span class="n">collect_data</span><span class="p">(</span><span class="ss">:linux</span><span class="p">)</span> <span class="k">do</span>
+    <span class="k">if</span> <span class="no">File</span><span class="o">.</span><span class="n">exists?</span><span class="p">(</span><span class="s2">"/sys/block"</span><span class="p">)</span>
+      <span class="n">block</span> <span class="o">=</span> <span class="no">Mash</span><span class="o">.</span><span class="n">new</span>
+      <span class="no">Dir</span><span class="o">[</span><span class="s2">"/sys/block/*"</span><span class="o">].</span><span class="n">each</span> <span class="k">do</span> <span class="o">|</span><span class="n">block_device_dir</span><span class="o">|</span>
+        <span class="n">dir</span> <span class="o">=</span> <span class="no">File</span><span class="o">.</span><span class="n">basename</span><span class="p">(</span><span class="n">block_device_dir</span><span class="p">)</span>
+        <span class="n">block</span><span class="o">[</span><span class="n">dir</span><span class="o">]</span> <span class="o">=</span> <span class="no">Mash</span><span class="o">.</span><span class="n">new</span>
+        <span class="sx">%w{size removable}</span><span class="o">.</span><span class="n">each</span> <span class="k">do</span> <span class="o">|</span><span class="n">check</span><span class="o">|</span>
+          <span class="k">if</span> <span class="no">File</span><span class="o">.</span><span class="n">exists?</span><span class="p">(</span><span class="s2">"/sys/block/</span><span class="si">#{</span><span class="n">dir</span><span class="si">}</span><span class="s2">/</span><span class="si">#{</span><span class="n">check</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
+            <span class="no">File</span><span class="o">.</span><span class="n">open</span><span class="p">(</span><span class="s2">"/sys/block/</span><span class="si">#{</span><span class="n">dir</span><span class="si">}</span><span class="s2">/</span><span class="si">#{</span><span class="n">check</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span> <span class="p">{</span> <span class="o">|</span><span class="n">f</span><span class="o">|</span> <span class="n">block</span><span class="o">[</span><span class="n">dir</span><span class="o">][</span><span class="n">check</span><span class="o">]</span> <span class="o">=</span> <span class="n">f</span><span class="o">.</span><span class="n">read_nonblock</span><span class="p">(</span><span class="mi">1024</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span> <span class="p">}</span>
+          <span class="k">end</span>
+        <span class="k">end</span>
+        <span class="sx">%w{model rev state timeout vendor}</span><span class="o">.</span><span class="n">each</span> <span class="k">do</span> <span class="o">|</span><span class="n">check</span><span class="o">|</span>
+          <span class="k">if</span> <span class="no">File</span><span class="o">.</span><span class="n">exists?</span><span class="p">(</span><span class="s2">"/sys/block/</span><span class="si">#{</span><span class="n">dir</span><span class="si">}</span><span class="s2">/device/</span><span class="si">#{</span><span class="n">check</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
+            <span class="no">File</span><span class="o">.</span><span class="n">open</span><span class="p">(</span><span class="s2">"/sys/block/</span><span class="si">#{</span><span class="n">dir</span><span class="si">}</span><span class="s2">/device/</span><span class="si">#{</span><span class="n">check</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span> <span class="p">{</span> <span class="o">|</span><span class="n">f</span><span class="o">|</span> <span class="n">block</span><span class="o">[</span><span class="n">dir</span><span class="o">][</span><span class="n">check</span><span class="o">]</span> <span class="o">=</span> <span class="n">f</span><span class="o">.</span><span class="n">read_nonblock</span><span class="p">(</span><span class="mi">1024</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span> <span class="p">}</span>
+          <span class="k">end</span>
+        <span class="k">end</span>
+      <span class="k">end</span>
+      <span class="n">block_device</span> <span class="n">block</span>
+    <span class="k">end</span>
+  <span class="k">end</span>
+<span class="k">end</span></pre></div><div class="step" step="9" data-x="63400" data-y="22074000" data-scale="0.5" data-rotate-z="90"><p>Finally all plugin Mashes are returned to <tt>Ohai::Application.run_application</tt> and are printed to stdout</p><pre class="highlight code json"><span class="p">{</span>
+  <span class="nt">"root_group"</span><span class="p">:</span> <span class="s2">"root"</span><span class="p">,</span>
+  <span class="nt">"uptime_seconds"</span><span class="p">:</span> <span class="mi">952</span><span class="p">,</span>
+  <span class="nt">"uptime"</span><span class="p">:</span> <span class="s2">"15 minutes 52 seconds"</span><span class="p">,</span>
+  <span class="nt">"idletime_seconds"</span><span class="p">:</span> <span class="mi">741</span><span class="p">,</span>
+  <span class="nt">"idletime"</span><span class="p">:</span> <span class="s2">"12 minutes 21 seconds"</span><span class="p">,</span></pre><p>...</p></div><div class="step" step="10" data-x="64400" data-y="22094000" data-scale="1" data-rotate-z="0"><h1 id="what-about-chef">What About Chef?</h1><p>Chef just calls <tt>Ohai::System.new</tt> directly in a Provider:</p><pre class="highlight code ruby"><span class="nb">require</span> <span class="s1">'ohai'</span>
+
+<span class="k">class</span> <span class="nc">Chef</span>
+  <span class="k">class</span> <span class="nc">Provider</span>
+    <span class="k">class</span> <span class="nc">Ohai</span> <span class="o">&lt;</span> <span class="ss">Chef</span><span class="p">:</span><span class="ss">:Provider</span>
+
+      <span class="k">def</span> <span class="nf">whyrun_supported?</span>
+        <span class="kp">true</span>
+      <span class="k">end</span>
+
+      <span class="k">def</span> <span class="nf">load_current_resource</span>
+        <span class="kp">true</span>
+      <span class="k">end</span>
+
+      <span class="k">def</span> <span class="nf">action_reload</span>
+        <span class="n">converge_by</span><span class="p">(</span><span class="s2">"re-run ohai and merge results into node attributes"</span><span class="p">)</span> <span class="k">do</span>
+          <span class="n">ohai</span> <span class="o">=</span> <span class="o">::</span><span class="ss">Ohai</span><span class="p">:</span><span class="ss">:System</span><span class="o">.</span><span class="n">new</span>
+
+          <span class="c1"># If @new_resource.plugin is nil, ohai will reload all the plugins</span>
+          <span class="c1"># Otherwise it will only reload the specified plugin</span>
+          <span class="c1"># Note that any changes to plugins, or new plugins placed on</span>
+          <span class="c1"># the path are picked up by ohai.</span>
+          <span class="n">ohai</span><span class="o">.</span><span class="n">all_plugins</span> <span class="vi">@new_resource</span><span class="o">.</span><span class="n">plugin</span>
+          <span class="n">node</span><span class="o">.</span><span class="n">automatic_attrs</span><span class="o">.</span><span class="n">merge!</span> <span class="n">ohai</span><span class="o">.</span><span class="n">data</span>
+          <span class="ss">Chef</span><span class="p">:</span><span class="ss">:Log</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">"</span><span class="si">#{</span><span class="vi">@new_resource</span><span class="si">}</span><span class="s2"> reloaded"</span><span class="p">)</span>
+        <span class="k">end</span>
+      <span class="k">end</span>
+    <span class="k">end</span>
+  <span class="k">end</span>
+<span class="k">end</span></pre></div><div class="step" step="11" data-x="64400" data-y="22095000" id="magic" data-scale="1"><img src="https://dl.dropboxusercontent.com/s/bit9swjwhb0zw79/2014-09-27%20at%203.49%20PM%202x.png" alt="" width="500px" height="400px"></img><p>Ohai isn't magic!</p><p>It just uses shell-outs to run commands on nodes...</p></div><div class="step" step="12" data-x="64400" data-y="22096000" data-scale="1"><pre class="highlight code ruby"><span class="no">Ohai</span><span class="o">.</span><span class="n">plugin</span><span class="p">(</span><span class="ss">:Python</span><span class="p">)</span> <span class="k">do</span>
+  <span class="n">provides</span> <span class="s2">"languages/python"</span>
+
+  <span class="n">depends</span> <span class="s2">"languages"</span>
+
+  <span class="n">collect_data</span> <span class="k">do</span>
+    <span class="n">output</span> <span class="o">=</span> <span class="kp">nil</span>
+
+    <span class="n">python</span> <span class="o">=</span> <span class="no">Mash</span><span class="o">.</span><span class="n">new</span>
+
+    <span class="n">so</span> <span class="o">=</span> <span class="n">shell_out</span><span class="p">(</span><span class="s2">"python -c </span><span class="se">\"</span><span class="s2">import sys; print (sys.version)</span><span class="se">\"</span><span class="s2">"</span><span class="p">)</span>
+
+    <span class="k">if</span> <span class="n">so</span><span class="o">.</span><span class="n">exitstatus</span> <span class="o">==</span> <span class="mi">0</span>
+      <span class="n">output</span> <span class="o">=</span> <span class="n">so</span><span class="o">.</span><span class="n">stdout</span><span class="o">.</span><span class="n">split</span>
+      <span class="n">python</span><span class="o">[</span><span class="ss">:version</span><span class="o">]</span> <span class="o">=</span> <span class="n">output</span><span class="o">[</span><span class="mi">0</span><span class="o">]</span>
+      <span class="k">if</span> <span class="n">output</span><span class="o">.</span><span class="n">length</span> <span class="o">&gt;=</span> <span class="mi">6</span>
+        <span class="n">python</span><span class="o">[</span><span class="ss">:builddate</span><span class="o">]</span> <span class="o">=</span> <span class="s2">"%s %s %s %s"</span> <span class="o">%</span> <span class="o">[</span><span class="n">output</span><span class="o">[</span><span class="mi">2</span><span class="o">]</span><span class="p">,</span><span class="n">output</span><span class="o">[</span><span class="mi">3</span><span class="o">]</span><span class="p">,</span><span class="n">output</span><span class="o">[</span><span class="mi">4</span><span class="o">]</span><span class="p">,</span><span class="n">output</span><span class="o">[</span><span class="mi">5</span><span class="o">].</span><span class="n">gsub!</span><span class="p">(</span>
+          <span class="sr">/\)/</span><span class="p">,</span><span class="s1">''</span><span class="p">)</span><span class="o">]</span>
+      <span class="k">end</span>
+
+      <span class="n">languages</span><span class="o">[</span><span class="ss">:python</span><span class="o">]</span> <span class="o">=</span> <span class="n">python</span> <span class="k">if</span> <span class="n">python</span><span class="o">[</span><span class="ss">:version</span><span class="o">]</span> <span class="ow">and</span> <span class="n">python</span><span class="o">[</span><span class="ss">:builddate</span><span class="o">]</span>
+    <span class="k">end</span>
+  <span class="k">end</span>
+<span class="k">end</span></pre></div><div class="step" step="13" data-x="64400" data-y="22097000" data-scale="1"><img src="http://i44.photobucket.com/albums/f18/ep3er/ricer4.jpg" alt="" width="" height=""></img><h1 id="plugins">Plugins</h1><ul><li>provides</li><li>depends</li><li>collect_data</li></ul></div><div class="step" step="14" id="ThreeD" data-y="22102000" data-rotate-x="180" data-x="64400" data-scale="1"><pre class="highlight code ruby"><span class="no">Ohai</span><span class="o">.</span><span class="n">plugin</span><span class="p">(</span><span class="ss">:Packages</span><span class="p">)</span> <span class="k">do</span>
+  <span class="n">provides</span> <span class="s1">'packages'</span>
+  <span class="n">depends</span> <span class="s1">'platform_family'</span>
+
+  <span class="n">collect_data</span><span class="p">(</span><span class="ss">:linux</span><span class="p">)</span> <span class="k">do</span>
+    <span class="n">packages</span> <span class="no">Mash</span><span class="o">.</span><span class="n">new</span>
+
+    <span class="k">if</span> <span class="n">platform_family</span><span class="o">.</span><span class="n">eql?</span><span class="p">(</span><span class="s1">'debian'</span><span class="p">)</span>
+      <span class="n">so</span> <span class="o">=</span> <span class="n">shell_out</span><span class="p">(</span><span class="s1">'dpkg-query -W'</span><span class="p">)</span>
+      <span class="n">pkgs</span> <span class="o">=</span> <span class="n">so</span><span class="o">.</span><span class="n">stdout</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s2">"</span><span class="se">\n</span><span class="s2">"</span><span class="p">)</span>
+
+      <span class="n">pkgs</span><span class="o">.</span><span class="n">each</span> <span class="k">do</span> <span class="o">|</span><span class="n">pkg</span><span class="o">|</span>
+        <span class="n">pkg</span> <span class="o">=</span> <span class="n">pkg</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s2">"</span><span class="se">\t</span><span class="s2">"</span><span class="p">)</span>
+        <span class="n">packages</span><span class="o">[</span><span class="n">pkg</span><span class="o">[</span><span class="mi">0</span><span class="o">]]</span> <span class="o">=</span> <span class="p">{</span> <span class="s1">'version'</span> <span class="o">=&gt;</span> <span class="n">pkg</span><span class="o">[</span><span class="mi">1</span><span class="o">]</span> <span class="p">}</span>
+      <span class="k">end</span>
+    <span class="k">elsif</span> <span class="n">platform_family</span><span class="o">.</span><span class="n">eql?</span><span class="p">(</span><span class="s1">'rhel'</span><span class="p">)</span>
+      <span class="n">so</span> <span class="o">=</span> <span class="n">shell_out</span><span class="p">(</span><span class="s2">"rpm -qa --queryformat '%{NAME}: %{VERSION}-%{RELEASE}</span><span class="se">\n</span><span class="s2">'"</span><span class="p">)</span>
+      <span class="n">pkgs</span> <span class="o">=</span> <span class="n">so</span><span class="o">.</span><span class="n">stdout</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s2">"</span><span class="se">\n</span><span class="s2">"</span><span class="p">)</span>
+
+      <span class="n">pkgs</span><span class="o">.</span><span class="n">each</span> <span class="k">do</span> <span class="o">|</span><span class="n">pkg</span><span class="o">|</span>
+        <span class="n">pkg</span> <span class="o">=</span> <span class="n">pkg</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s1">': '</span><span class="p">)</span>
+        <span class="n">packages</span><span class="o">[</span><span class="n">pkg</span><span class="o">[</span><span class="mi">0</span><span class="o">]]</span> <span class="o">=</span> <span class="p">{</span> <span class="s1">'version'</span> <span class="o">=&gt;</span> <span class="n">pkg</span><span class="o">[</span><span class="mi">1</span><span class="o">]</span> <span class="p">}</span>
+      <span class="k">end</span>
+    <span class="k">end</span>
+  <span class="k">end</span>
+<span class="k">end</span></pre></div><div class="step" step="15" data-x="64400" data-y="22107000" data-scale="1" data-rotate-x="180"><h1 id="plugins-lots-of-possibilities">Plugins = Lots of Possibilities</h1><p>Report configured Cron jobs:</p><pre class="highlight code json"><span class="p">{</span>
+  <span class="nt">"root"</span><span class="p">:</span> <span class="p">[</span>
+    <span class="p">{</span>
+      <span class="nt">"m"</span><span class="p">:</span> <span class="s2">"0"</span><span class="p">,</span>
+      <span class="nt">"h"</span><span class="p">:</span> <span class="s2">"0"</span><span class="p">,</span>
+      <span class="nt">"dom"</span><span class="p">:</span> <span class="s2">"1"</span><span class="p">,</span>
+      <span class="nt">"mon"</span><span class="p">:</span> <span class="s2">"3"</span><span class="p">,</span>
+      <span class="nt">"dow"</span><span class="p">:</span> <span class="s2">"0"</span><span class="p">,</span>
+      <span class="nt">"command"</span><span class="p">:</span> <span class="s2">"root echo hello"</span>
+    <span class="p">},</span>
+    <span class="p">{</span>
+      <span class="nt">"time"</span><span class="p">:</span> <span class="s2">"@reboot"</span><span class="p">,</span>
+      <span class="nt">"command"</span><span class="p">:</span> <span class="s2">"echo hello"</span>
+    <span class="p">}</span>
+  <span class="p">]</span>
+<span class="p">}</span></pre></div><div class="step" step="16" data-y="22108000" data-x="64400" data-scale="1" data-rotate-x="180"><p>List Apache Config and Vhosts:</p><pre class="highlight code json"><span class="p">{</span>
+  <span class="nt">"bin"</span><span class="p">:</span> <span class="s2">"/usr/sbin/apache2"</span><span class="p">,</span>
+  <span class="nt">"user"</span><span class="p">:</span> <span class="s2">"www-data"</span><span class="p">,</span>
+  <span class="nt">"clients"</span><span class="p">:</span> <span class="mi">16</span><span class="p">,</span>
+  <span class="nt">"version"</span><span class="p">:</span> <span class="s2">"Apache/2.4.7 (Ubuntu)"</span><span class="p">,</span>
+  <span class="nt">"mpm"</span><span class="p">:</span> <span class="s2">"prefork"</span><span class="p">,</span>
+  <span class="nt">"config_path"</span><span class="p">:</span> <span class="s2">"/etc/apache2"</span><span class="p">,</span>
+  <span class="nt">"config_file"</span><span class="p">:</span> <span class="s2">"/etc/apache2/apache2.conf"</span><span class="p">,</span>
+  <span class="nt">"syntax_ok"</span><span class="p">:</span> <span class="kc">true</span><span class="p">,</span>
+  <span class="nt">"vhosts"</span><span class="p">:</span> <span class="p">{</span>
+    <span class="nt">"*:80"</span><span class="p">:</span> <span class="p">{</span>
+      <span class="nt">"default"</span><span class="p">:</span> <span class="p">{</span>
+        <span class="nt">"vhost"</span><span class="p">:</span> <span class="s2">"magento.example.com"</span><span class="p">,</span>
+        <span class="nt">"conf"</span><span class="p">:</span> <span class="s2">"/etc/apache2/sites-enabled/magento.conf:1"</span><span class="p">,</span>
+        <span class="nt">"docroot"</span><span class="p">:</span> <span class="s2">"/srv/magento"</span><span class="p">,</span>
+        <span class="nt">"accesslogs"</span><span class="p">:</span> <span class="p">[</span>
+          <span class="s2">"/var/log/apache2/magento-access.log combined"</span>
+        <span class="p">],</span>
+        <span class="nt">"errorlog"</span><span class="p">:</span> <span class="s2">"/var/log/apache2/magento-error.log"</span>
+      <span class="p">},</span></pre></div><div class="step" step="17" data-x="64400" data-y="22109000" data-scale="1" data-rotate-x="180"><p>Report Remote Services:</p><pre class="highlight code json"><span class="p">[</span>
+  <span class="p">{</span>
+    <span class="nt">"protocol"</span><span class="p">:</span> <span class="s2">"tcp"</span><span class="p">,</span>
+    <span class="nt">"ip"</span><span class="p">:</span> <span class="s2">"0.0.0.0"</span><span class="p">,</span>
+    <span class="nt">"port"</span><span class="p">:</span> <span class="s2">"22"</span><span class="p">,</span>
+    <span class="nt">"pid"</span><span class="p">:</span> <span class="s2">"1220"</span><span class="p">,</span>
+    <span class="nt">"process"</span><span class="p">:</span> <span class="s2">"sshd"</span><span class="p">,</span>
+    <span class="nt">"path"</span><span class="p">:</span> <span class="s2">"1220/sshd"</span>
+  <span class="p">},</span>
+  <span class="p">{</span>
+    <span class="nt">"protocol"</span><span class="p">:</span> <span class="s2">"tcp"</span><span class="p">,</span>
+    <span class="nt">"ip"</span><span class="p">:</span> <span class="s2">"0.0.0.0"</span><span class="p">,</span>
+    <span class="nt">"port"</span><span class="p">:</span> <span class="s2">"25"</span><span class="p">,</span>
+    <span class="nt">"pid"</span><span class="p">:</span> <span class="s2">"14053"</span><span class="p">,</span>
+    <span class="nt">"process"</span><span class="p">:</span> <span class="s2">"master"</span><span class="p">,</span>
+    <span class="nt">"path"</span><span class="p">:</span> <span class="s2">"14053/master"</span>
+  <span class="p">},</span>
+  <span class="p">{</span>
+    <span class="nt">"protocol"</span><span class="p">:</span> <span class="s2">"tcp"</span><span class="p">,</span>
+    <span class="nt">"ip"</span><span class="p">:</span> <span class="s2">"0.0.0.0"</span><span class="p">,</span>
+    <span class="nt">"port"</span><span class="p">:</span> <span class="s2">"37377"</span><span class="p">,</span>
+    <span class="nt">"pid"</span><span class="p">:</span> <span class="s2">"551"</span><span class="p">,</span>
+    <span class="nt">"process"</span><span class="p">:</span> <span class="s2">"rpc.statd"</span><span class="p">,</span>
+    <span class="nt">"path"</span><span class="p">:</span> <span class="s2">"551/rpc.statd"</span>
+  <span class="p">},</span>
+  <span class="p">{</span>
+    <span class="nt">"protocol"</span><span class="p">:</span> <span class="s2">"tcp"</span><span class="p">,</span>
+    <span class="nt">"ip"</span><span class="p">:</span> <span class="s2">"0.0.0.0"</span><span class="p">,</span>
+    <span class="nt">"port"</span><span class="p">:</span> <span class="s2">"3306"</span><span class="p">,</span>
+    <span class="nt">"pid"</span><span class="p">:</span> <span class="s2">"12400"</span><span class="p">,</span>
+    <span class="nt">"process"</span><span class="p">:</span> <span class="s2">"mysqld"</span><span class="p">,</span>
+    <span class="nt">"path"</span><span class="p">:</span> <span class="s2">"12400/mysqld"</span>
+  <span class="p">},</span></pre></div><div class="step" step="18" data-x="64400" data-y="22110000" data-scale="1" data-rotate-x="180"><h1 id="and-so-much-more">And So Much More!</h1><img src="https://i.imgur.com/yCMwVpu.gif" alt="" width="" height=""></img><p><a href="https://github.com/rackerlabs/ohai-plugins">https://github.com/rackerlabs/ohai-plugins</a></p></div></div><div id="hovercraft-help"><table><tr><th>Space</th><td>Forward</td></tr><tr><th>Left, Down, Page Down</th><td>Next slide</td></tr><tr><th>Right, Up, Page Up</th><td>Previous slide</td></tr><tr><th>P</th><td>Open presenter console</td></tr><tr><th>H</th><td>Toggle this help</td></tr></table></div><script type="text/javascript" src="js/impress.js"></script><script type="text/javascript" src="js/impressConsole.js"></script><script type="text/javascript" src="js/hovercraft.js"></script></body></html>
